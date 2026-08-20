@@ -17,7 +17,14 @@ import requests
 from icalendar import Calendar
 from sqlalchemy.orm import Session
 
+from services import reminders_service
 from models import AssignmentCache
+
+# How far before a due date to remind, and how soon "too late for a full
+# day's notice" falls back to an almost-immediate nudge instead of silently
+# skipping (e.g. an assignment first synced only hours before it's due).
+_REMINDER_LEAD_TIME = timedelta(hours=24)
+_FALLBACK_LEAD_TIME = timedelta(minutes=5)
 
 CANVAS_ICAL_URL = os.getenv("CANVAS_ICAL_URL")
 
@@ -83,6 +90,44 @@ def sync_assignments(db: Session) -> int:
 
     db.commit()
     return synced
+
+
+def create_reminders_for_upcoming_assignments(db: Session) -> list[AssignmentCache]:
+    """
+    Agentic bit: rather than waiting to be asked what's due, proactively
+    create a reminder for any not-yet-reminded assignment with a future due
+    date. Marks each as `reminded` so re-running this after the next sync
+    doesn't create duplicates. Returns the assignments that got a new
+    reminder, so the caller (scheduler) can summarize what it just did.
+    """
+    now = datetime.now(timezone.utc)
+    candidates = (
+        db.query(AssignmentCache)
+        .filter(AssignmentCache.reminded.isnot(True))
+        .filter(AssignmentCache.due_at.isnot(None))
+        .filter(AssignmentCache.due_at > now)
+        .all()
+    )
+
+    reminded = []
+    for assignment in candidates:
+        remind_at = assignment.due_at - _REMINDER_LEAD_TIME
+        if remind_at <= now:
+            remind_at = now + _FALLBACK_LEAD_TIME
+
+        course_suffix = f" ({assignment.course_name})" if assignment.course_name else ""
+        reminders_service.create_reminder(
+            db,
+            text=f"Assignment due soon: {assignment.title}{course_suffix}",
+            remind_at=remind_at,
+            recurrence_rule=None,
+            delivery_channel="push",
+        )
+        assignment.reminded = True
+        reminded.append(assignment)
+
+    db.commit()
+    return reminded
 
 
 def get_due_this_week(db: Session) -> list[AssignmentCache]:

@@ -9,13 +9,13 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-import briefing_service
-import canvas_ical
-import course_schedule
-import reminders_service
-import syllabus_service
-import tasks_service
-import weather_service
+from services import briefing_service
+from services import canvas_ical
+from services import course_schedule
+from services import reminders_service
+from services import syllabus_service
+from services import tasks_service
+from services import weather_service
 
 
 def _iso(dt) -> str | None:

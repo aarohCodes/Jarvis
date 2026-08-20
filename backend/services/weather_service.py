@@ -7,7 +7,7 @@ PUT /preferences/home_location with a body like {"value": {"lat": 32.9857, "lon"
 import requests
 from sqlalchemy.orm import Session
 
-import preferences_service
+from services import preferences_service
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 

@@ -1,10 +1,10 @@
 from sqlalchemy.orm import Session
 
-import canvas_ical
-import course_schedule
-import reminders_service
-import tasks_service
-import weather_service
+from services import canvas_ical
+from services import course_schedule
+from services import reminders_service
+from services import tasks_service
+from services import weather_service
 
 
 def get_morning_briefing(db: Session) -> dict:

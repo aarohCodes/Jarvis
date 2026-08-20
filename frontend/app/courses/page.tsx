@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, Course } from "@/lib/api";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
 const emptyForm = {
   term: "26f",
@@ -21,6 +23,11 @@ export default function CoursesPage() {
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [lookupBusy, setLookupBusy] = useState(false);
+
+  const [photoTerm, setPhotoTerm] = useState("26f");
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoResult, setPhotoResult] = useState<string | null>(null);
+  const photoRef = useRef<HTMLInputElement>(null);
 
   const load = () => api.get<Course[]>("/courses/schedule").then(setCourses).catch((e) => setError(e.message));
 
@@ -102,6 +109,41 @@ export default function CoursesPage() {
     }
   };
 
+  const importFromPhotos = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const files = photoRef.current?.files;
+    if (!files || files.length === 0) return;
+
+    setPhotoBusy(true);
+    setPhotoResult(null);
+    setError(null);
+
+    let imported = 0;
+    const failures: string[] = [];
+
+    for (const file of Array.from(files)) {
+      const form = new FormData();
+      form.append("term", photoTerm);
+      form.append("file", file);
+      try {
+        const res = await fetch(`${API_BASE}/courses/import-image`, { method: "POST", body: form });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.detail || res.statusText);
+        imported += body.imported;
+      } catch (err: any) {
+        failures.push(`${file.name}: ${err.message}`);
+      }
+    }
+
+    setPhotoBusy(false);
+    setPhotoResult(
+      `Imported ${imported} class${imported === 1 ? "" : "es"} from ${files.length} photo${files.length === 1 ? "" : "s"}.` +
+        (failures.length ? ` ${failures.length} failed — ${failures.join("; ")}` : "")
+    );
+    if (photoRef.current) photoRef.current.value = "";
+    if (imported > 0) load();
+  };
+
   return (
     <div>
       <h2 className="page-title">Courses</h2>
@@ -153,6 +195,29 @@ export default function CoursesPage() {
             </button>
           )}
         </form>
+      </div>
+
+      <div className="panel">
+        <h3 className="panel-title">Import from photo</h3>
+        <p className="empty-state" style={{ marginBottom: 10 }}>
+          Upload a screenshot or photo of your schedule — a catalog listing, a printed schedule, one class or
+          several in a single image. Gemini reads it and adds each section automatically. Select multiple files
+          to import several photos at once.
+        </p>
+        <form className="inline-form" onSubmit={importFromPhotos}>
+          <div className="field">
+            <label>Term</label>
+            <input value={photoTerm} onChange={(e) => setPhotoTerm(e.target.value)} placeholder="26f" required />
+          </div>
+          <div className="field">
+            <label>Photo(s)</label>
+            <input type="file" accept="image/*" multiple ref={photoRef} required />
+          </div>
+          <button type="submit" disabled={photoBusy}>
+            {photoBusy ? "Reading…" : "Import"}
+          </button>
+        </form>
+        {photoResult && <p className="empty-state" style={{ marginTop: 8 }}>{photoResult}</p>}
       </div>
 
       <div className="panel">

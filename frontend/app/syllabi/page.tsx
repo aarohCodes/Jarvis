@@ -88,11 +88,14 @@ export default function SyllabiPage() {
             <input value={courseCode} onChange={(e) => setCourseCode(e.target.value)} placeholder="cs3345" required />
           </div>
           <div className="field">
-            <label>PDF file</label>
-            <input type="file" accept="application/pdf" ref={fileRef} required />
+            <label>PDF or photo</label>
+            <input type="file" accept="application/pdf,image/*" ref={fileRef} required />
           </div>
           <button type="submit">Upload</button>
         </form>
+        <p className="empty-state" style={{ marginTop: 8 }}>
+          A PDF is extracted directly; a photo/screenshot is read by Gemini vision instead.
+        </p>
       </div>
 
       <div className="panel">

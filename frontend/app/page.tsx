@@ -5,33 +5,28 @@ import { api, Briefing } from "@/lib/api";
 import { useClock } from "@/lib/useClock";
 
 type ChatEntry = { role: "user" | "assistant"; content: string };
-type CoreState = "idle" | "listening" | "thinking" | "speaking";
+type CoreState = "idle" | "thinking";
 
 const SESSION_ID = "default";
 
 const STATUS_LABEL: Record<CoreState, string> = {
   idle: "STANDING BY",
-  listening: "LISTENING…",
   thinking: "PROCESSING…",
-  speaking: "RESPONDING…",
 };
 
 export default function CommandDeckPage() {
   const now = useClock();
 
-  // -- voice / chat state --
+  // -- chat state --
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState("");
   const [coreState, setCoreState] = useState<CoreState>("idle");
   const [chatError, setChatError] = useState<string | null>(null);
-  const [muted, setMuted] = useState(false);
-  const [voiceSupported, setVoiceSupported] = useState(false);
 
   // -- briefing state --
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [briefingError, setBriefingError] = useState<string | null>(null);
 
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   // shared "no data yet" fallback for briefing panels — surfaces the fetch
@@ -48,9 +43,6 @@ export default function CommandDeckPage() {
         /* fresh session is fine */
       });
 
-    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-    setVoiceSupported(Boolean(SpeechRecognitionCtor) && "speechSynthesis" in window);
-
     api
       .get<Briefing>("/briefing/morning")
       .then(setBriefing)
@@ -60,18 +52,6 @@ export default function CommandDeckPage() {
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, coreState]);
-
-  const speak = (text: string) => {
-    if (muted || !("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.02;
-    utterance.pitch = 0.85;
-    utterance.onstart = () => setCoreState("speaking");
-    utterance.onend = () => setCoreState("idle");
-    utterance.onerror = () => setCoreState("idle");
-    window.speechSynthesis.speak(utterance);
-  };
 
   const sendMessage = async (text: string) => {
     const trimmed = text.trim();
@@ -83,35 +63,11 @@ export default function CommandDeckPage() {
     try {
       const res = await api.post<{ reply: string }>("/chat", { message: trimmed, session_id: SESSION_ID });
       setMessages((prev) => [...prev, { role: "assistant", content: res.reply }]);
-      if (res.reply) speak(res.reply);
-      else setCoreState("idle");
+      setCoreState("idle");
     } catch (e: any) {
       setChatError(e.message);
       setCoreState("idle");
     }
-  };
-
-  const toggleListening = () => {
-    if (coreState === "listening") {
-      recognitionRef.current?.stop();
-      return;
-    }
-    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognitionCtor) return;
-
-    const recognition = new SpeechRecognitionCtor();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = "en-US";
-    recognition.onresult = (event) => {
-      const transcript = event.results[event.results.length - 1][0].transcript;
-      sendMessage(transcript);
-    };
-    recognition.onerror = () => setCoreState("idle");
-    recognition.onend = () => setCoreState((s) => (s === "listening" ? "idle" : s));
-    recognitionRef.current = recognition;
-    setCoreState("listening");
-    recognition.start();
   };
 
   return (
@@ -119,7 +75,7 @@ export default function CommandDeckPage() {
       <header className="deck-header">
         <div>
           <h1 className="deck-title">Command Deck</h1>
-          <p className="deck-subtitle">// voice interface online — say the word, sir.</p>
+          <p className="deck-subtitle">// text interface online — voice pending ElevenLabs integration.</p>
         </div>
         <div className="deck-meta">
           <span className="deck-date">
@@ -171,7 +127,7 @@ export default function CommandDeckPage() {
           </div>
         </div>
 
-        {/* -------- center: voice core + transcript -------- */}
+        {/* -------- center: core + transcript -------- */}
         <div className="deck-col deck-col-center">
           <div className="chat-core-wrap">
             <div className={`chat-core size-hero state-${coreState}`}>
@@ -179,11 +135,6 @@ export default function CommandDeckPage() {
               <div className="chat-core-ring r2" />
               <div className="chat-core-ring r3" />
               <div className="chat-core-dot" />
-              <div className="chat-bars" aria-hidden="true">
-                {Array.from({ length: 7 }).map((_, i) => (
-                  <span key={i} style={{ animationDelay: `${i * 90}ms` }} />
-                ))}
-              </div>
             </div>
             <div className="chat-status">{STATUS_LABEL[coreState]}</div>
           </div>
@@ -210,31 +161,14 @@ export default function CommandDeckPage() {
               sendMessage(input);
             }}
           >
-            <button
-              type="button"
-              className={`mic-button ${coreState === "listening" ? "active" : ""}`}
-              onClick={toggleListening}
-              disabled={!voiceSupported}
-              title={voiceSupported ? "Voice input" : "Voice input not supported in this browser"}
-            >
-              ●
-            </button>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Speak, or type a command…"
+              placeholder="Type a command…"
               autoComplete="off"
             />
             <button type="submit">Send</button>
-            <button type="button" className="secondary" onClick={() => setMuted((m) => !m)}>
-              {muted ? "Unmute" : "Mute"}
-            </button>
           </form>
-          {!voiceSupported && (
-            <p className="empty-state" style={{ marginTop: 6 }}>
-              Voice input needs a Chromium-based browser (Chrome/Edge). Text chat always works.
-            </p>
-          )}
         </div>
 
         {/* -------- right: manifest dock -------- */}
