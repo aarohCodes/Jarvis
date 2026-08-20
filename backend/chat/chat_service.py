@@ -3,8 +3,8 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from chat_tools import TOOL_SPECS, execute_tool
-from llm_provider import get_llm_provider
+from chat.chat_tools import TOOL_SPECS, execute_tool
+from chat.llm_provider import get_llm_provider
 from models import ChatMessage
 
 MAX_TOOL_ITERATIONS = 5
@@ -72,7 +72,10 @@ def send_message(db: Session, session_id: str, user_message: str) -> str:
         response = provider.chat(turns, TOOL_SPECS, SYSTEM_PROMPT)
 
         tool_calls_payload = (
-            [{"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in response.tool_calls]
+            [
+                {"id": tc.id, "name": tc.name, "arguments": tc.arguments, "thought_signature": tc.thought_signature}
+                for tc in response.tool_calls
+            ]
             if response.tool_calls
             else None
         )

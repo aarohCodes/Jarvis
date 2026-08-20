@@ -70,6 +70,9 @@ class AssignmentCache(Base):
     description = Column(Text, nullable=True)
     html_url = Column(String(1000), nullable=True)
     synced_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    # Set once an auto-reminder has been created for this assignment, so the
+    # periodic sync job doesn't create a duplicate reminder every run.
+    reminded = Column(Boolean, default=False)
 
 
 class Syllabus(Base):

@@ -8,16 +8,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-import briefing_service
-import canvas_ical
-import chat_service
-import course_schedule
-import preferences_service
-import reminders_service
+from services import briefing_service
+from services import canvas_ical
+from chat import chat_service
+from services import course_schedule
+from services import preferences_service
+from services import reminders_service
+from services import schedule_import_service
 import scheduler
-import syllabus_service
-import tasks_service
-import weather_service
+from services import syllabus_service
+from services import tasks_service
+from services import weather_service
 from database import engine, get_db
 from models import Task
 from schemas import (
@@ -243,6 +244,30 @@ def get_schedule(db: Session = Depends(get_db)):
     return [_course_out(c) for c in course_schedule.get_all_courses(db)]
 
 
+@app.post("/courses/import-image")
+async def import_course_image(
+    term: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Upload a photo/screenshot of one or more class schedule entries (course
+    catalog screenshot, printed schedule, syllabus header, etc). Uses
+    Gemini's vision + structured output to extract each class and adds it
+    the same way POST /courses/manual does.
+    """
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(status_code=422, detail=f"Expected an image file, got {file.content_type}.")
+    image_bytes = await file.read()
+    try:
+        rows = schedule_import_service.import_classes_from_image(db, term, image_bytes, file.content_type)
+    except RuntimeError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Schedule image import failed: {e}")
+    return {"imported": len(rows), "classes": [_course_out(r) for r in rows]}
+
+
 @app.put("/courses/{course_id}")
 def update_course(course_id: str, body: CourseUpdate, db: Session = Depends(get_db)):
     row = course_schedule.update_course(db, course_id, **body.model_dump(exclude_unset=True))
@@ -297,11 +322,25 @@ async def upload_syllabus(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
+    """Accepts either a PDF (extracted with pypdf) or a photo/screenshot of
+    a syllabus (extracted with Gemini vision — see syllabus_service.py)."""
+    content_type = file.content_type or ""
     file_bytes = await file.read()
     try:
-        row = syllabus_service.store_syllabus(db, course_code, file.filename, file_bytes)
+        if content_type == "application/pdf":
+            row = syllabus_service.store_syllabus(db, course_code, file.filename, file_bytes)
+        elif content_type.startswith("image/"):
+            row = syllabus_service.store_syllabus_from_image(db, course_code, file.filename, file_bytes, content_type)
+        else:
+            raise HTTPException(status_code=422, detail=f"Unsupported file type '{content_type}' — upload a PDF or an image.")
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Syllabus import failed: {e}")
     return {"course_code": row.course_code, "file_name": row.file_name, "characters_extracted": len(row.raw_text)}
 
 

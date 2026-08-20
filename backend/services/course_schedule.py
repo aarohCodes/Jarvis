@@ -37,7 +37,7 @@ import requests
 from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
-import preferences_service
+from services import preferences_service
 from models import CourseSection
 
 COURSEBOOK_BASE = "https://coursebook.utdallas.edu"
